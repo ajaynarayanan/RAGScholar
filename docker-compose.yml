@@ -1,0 +1,59 @@
+services:
+  application:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    image: application
+    container_name: application
+    depends_on:
+      chromaDB:
+        condition: service_healthy
+      ollama: 
+        condition: service_healthy
+    volumes:
+      - ./:/app/
+    networks:
+      - net
+
+  ollama: 
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_volume:/root/.ollama
+    restart: always
+    container_name: ollama
+    networks:
+      - net  
+    healthcheck:
+      test: ollama --version || exit 1
+      interval: 30s
+      timeout: 30s
+      retries: 2
+      start_period: 5s
+      
+  chromaDB:
+    image: chromadb/chroma
+    ports:
+      - "8000:8000"
+    restart: always
+    volumes:
+      - chromadb_volume:/chroma/chroma
+    networks:
+      - net
+    healthcheck:
+      test: curl http://localhost:8000/api/v1/heartbeat || exit 1
+      interval: 30s
+      timeout: 30s
+      retries: 2
+      start_period: 5s
+
+volumes:
+  chromadb_volume:
+    driver: local
+  ollama_volume:
+    driver: local
+
+networks:
+  net:
+    driver: bridge
