@@ -1,4 +1,5 @@
 import os 
+import uuid
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import Chroma
@@ -15,9 +16,20 @@ class DocumentLoader:
     def load_into_database(self, chroma_client, embeddings, collection_name):
 
         print("Creating embeddings for the chunks")
+
+        # Adding only documents that are not already present in the database 
+        # Create a list of unique ids for each document based on the content
+        ids = [str(uuid.uuid5(uuid.NAMESPACE_DNS, doc.page_content)) for doc in self.chunked_documents]
+        unique_ids = list(set(ids))
+
+        # Ensure that only docs that correspond to unique ids are kept and that only one of the duplicate ids is kept
+        seen_ids = set()
+        unique_docs = [doc for doc, id in zip(self.chunked_documents, ids) if id not in seen_ids and (seen_ids.add(id) or True)]
+
         vectordb = Chroma.from_documents(
-            documents=self.chunked_documents,
+            documents=unique_docs,
             embedding=embeddings,
+            ids=unique_ids,
             client=chroma_client,
             collection_name=collection_name,
         )

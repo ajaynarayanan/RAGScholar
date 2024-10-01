@@ -4,6 +4,8 @@ services:
       context: .
       dockerfile: ./Dockerfile
     image: application
+    stdin_open: true 
+    tty: true        
     container_name: application
     depends_on:
       chromaDB:

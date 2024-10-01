@@ -20,7 +20,7 @@ RAGScholar is a Q&A chatbot designed specifically for academic papers, aimed at 
    - Build and start the dockerized application with the following commands:
      ```bash
      docker-compose build
-     docker-compose up
+     docker compose up -d && docker attach application
      ```
 
 # License
