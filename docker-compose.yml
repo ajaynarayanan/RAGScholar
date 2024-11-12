@@ -33,6 +33,13 @@ services:
       timeout: 30s
       retries: 2
       start_period: 5s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all # alternatively, use `count: all` for all GPUs
+              capabilities: [gpu]
       
   chromaDB:
     image: chromadb/chroma
