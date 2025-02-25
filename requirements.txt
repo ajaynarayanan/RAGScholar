@@ -1,8 +1,9 @@
 numpy==1.26.4
 pandas==2.2.3
-chromadb==0.5.11
+chromadb==0.6.3
 pypdf==5.0.1
-langchain
-langchain-community
-langchain-core
+langchain==0.3.19
+langchain-community==0.3.18
+langchain-core==0.3.39
 ollama==0.3.3
+termcolor==2.5.0
