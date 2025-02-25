@@ -4,4 +4,5 @@ CHROMADB_HOST="chromaDB"
 CHROMADB_PORT=8000
 LLM_MODEL_NAME="llama3.2:1b"
 EMBEDDING_MODEL_NAME="llama3.2:1b"
-RESOURCES_PATH="./resources/"
+RESOURCES_PDF_PATH="./resources/pdf/"
+RESOURCES_JSON_PATH="./resources/json/"

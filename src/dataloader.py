@@ -1,11 +1,16 @@
-import os 
-import uuid
+import os
+import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_community.vectorstores import Chroma
+from langchain_core.documents.base import Document
 
-class DocumentLoader:
-  
+
+##############################
+# PDF Document Loader Class  #
+##############################
+
+class PDFDocumentLoader:
     def __init__(self, file_path, text_splitter):
         self.file_path = file_path
         self.text_splitter = text_splitter
@@ -13,42 +18,101 @@ class DocumentLoader:
         self.chunked_documents = None
         self.__read_documents()
         
-    def load_into_database(self, chroma_client, embeddings, collection_name):
-
-        print("Creating embeddings for the chunks")
-
-        # Adding only documents that are not already present in the database 
-        # Create a list of unique ids for each document based on the content
-        ids = [str(uuid.uuid5(uuid.NAMESPACE_DNS, doc.page_content)) for doc in self.chunked_documents]
-        unique_ids = list(set(ids))
-
-        # Ensure that only docs that correspond to unique ids are kept and that only one of the duplicate ids is kept
-        seen_ids = set()
-        unique_docs = [doc for doc, id in zip(self.chunked_documents, ids) if id not in seen_ids and (seen_ids.add(id) or True)]
-
-        vectordb = Chroma.from_documents(
-            documents=unique_docs,
-            embedding=embeddings,
-            ids=unique_ids,
-            client=chroma_client,
-            collection_name=collection_name,
-        )
-        print("Done with embeddings creation")
-
-        return vectordb
-
+    def load_documents(self):
+        # Returns the chunked documents so that they can be merged with others
+        return self.chunked_documents
 
     def __read_documents(self):
-
         for file in os.listdir(self.file_path):
             if file.endswith('.pdf'):
                 pdf_path = os.path.join(self.file_path, file)
                 loader = PyPDFLoader(pdf_path)
                 self.documents.extend(loader.load())
-
-        print(f"Loaded {len(self.documents)} documents")
+        print(f"Loaded {len(self.documents)} PDF documents")
         self.chunked_documents = self.text_splitter.split_documents(self.documents)
-        print(f"Created {len(self.chunked_documents)} chunked documents")
+        print(f"Created {len(self.chunked_documents)} PDF chunked documents")
+
+
+#################################
+# JSON Document Loader Class    #
+#################################
+
+class JSONDocumentLoader:
+    def __init__(self, file_path, text_splitter):
+        self.file_path = file_path
+        self.text_splitter = text_splitter
+        self.documents = []
+        self.chunked_documents = None
+        self.__read_documents()
         
+    def load_documents(self):
+        # Returns the chunked documents so that they can be merged with others
+        return self.chunked_documents
+
+    def __read_documents(self):
+        json_files = [file for file in os.listdir(self.file_path) if file.endswith('.json')]
+        
+        def process_file(file):
+            json_path = os.path.join(self.file_path, file)
+            try:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                extracted_text = self.__extract_relevant_text(data)
+                metadata = {
+                    "title": data.get("title", ""),
+                    "filename": file,
+                    "identifier": data.get("identifier", "")
+                }
+                return Document(page_content=extracted_text, metadata=metadata)
+            except Exception as e:
+                print(f"Error processing {file}: {e}")
+                return None
+
+        with ThreadPoolExecutor() as executor:
+            futures = [executor.submit(process_file, file) for file in json_files]
+            for future in as_completed(futures):
+                doc = future.result()
+                if doc is not None:
+                    self.documents.append(doc)
+                    
+        print(f"Loaded {len(self.documents)} JSON documents")
+        self.chunked_documents = self.text_splitter.split_documents(self.documents)
+        print(f"Created {len(self.chunked_documents)} JSON chunked documents")
+
+    def __extract_relevant_text(self, json_data):
+        relevant_text = []
+        # Extract key textual fields
+        relevant_text.append(json_data.get("title", ""))
+        relevant_text.append(json_data.get("notes", ""))
+        relevant_text.append(json_data.get("name", ""))
+        relevant_text.append(json_data.get("disname", ""))
+        relevant_text.append(str(json_data.get("origin", "")))
+        relevant_text.append(str(json_data.get("proliferation", "")))
+        
+        # Extract text from sections
+        if "sections" in json_data:
+            for section in json_data["sections"]:
+                relevant_text.append(section.get("name", ""))
+                for prop in section.get("properties", []):
+                    relevant_text.append(f"{prop.get('name', '')}: {prop.get('value', '')}")
+
+        return " ".join(filter(None, relevant_text))
 
 
+#################################
+# Combined Loader Function      #
+#################################
+
+def load_all_documents(pdf_path, json_path, text_splitter):
+    # Instantiate both loaders
+    pdf_loader = PDFDocumentLoader(file_path=pdf_path, text_splitter=text_splitter)
+    json_loader = JSONDocumentLoader(file_path=json_path, text_splitter=text_splitter)
+
+    # Combine chunked documents from both loaders
+    combined_chunked_documents = []
+    if pdf_loader.load_documents():
+        combined_chunked_documents.extend(pdf_loader.load_documents())
+    if json_loader.load_documents():
+        combined_chunked_documents.extend(json_loader.load_documents())
+    print(f"Total combined chunked documents: {len(combined_chunked_documents)}")
+    return combined_chunked_documents

@@ -1,11 +1,17 @@
+import uuid
 import chromadb
 from chromadb.config import Settings
 from ollama import Client
+
+from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-from constants import OLLAMA_HOST, OLLAMA_PORT, CHROMADB_HOST, CHROMADB_PORT, RESOURCES_PATH, LLM_MODEL_NAME, EMBEDDING_MODEL_NAME
-from dataloader import DocumentLoader
+from constants import OLLAMA_HOST, OLLAMA_PORT, \
+    CHROMADB_HOST, CHROMADB_PORT, LLM_MODEL_NAME, \
+    EMBEDDING_MODEL_NAME, RESOURCES_JSON_PATH, \
+    RESOURCES_PDF_PATH
+from dataloader import load_all_documents
 
 TEXT_SPLITTER = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
 
@@ -16,22 +22,52 @@ def setupOllama():
 
     return ollama_client
 
-def setupChromaDB():
-    chroma_client = chromadb.HttpClient(host=CHROMADB_HOST, port=CHROMADB_PORT, settings=Settings(allow_reset=True, anonymized_telemetry=False))
 
+#################################
+# Setup ChromaDB Function       #
+#################################
+
+def setupChromaDB():
+    # Initialize ChromaDB client
+    chroma_client = chromadb.HttpClient(
+        host=CHROMADB_HOST, 
+        port=CHROMADB_PORT, 
+        settings=Settings(allow_reset=True, anonymized_telemetry=False)
+    )
+
+    # Initialize embeddings (using OllamaEmbeddings as per your current setup)
     embed_model = OllamaEmbeddings(
         model=EMBEDDING_MODEL_NAME,
         base_url=f"http://{OLLAMA_HOST}:{OLLAMA_PORT}",
     )
 
-    document_loader = DocumentLoader(file_path=RESOURCES_PATH, text_splitter=TEXT_SPLITTER)
-    vector_store = document_loader.load_into_database(chroma_client=chroma_client, embeddings=embed_model, collection_name="my_documents")
+    # Load and combine documents from PDFs and JSONs
+    combined_chunked_documents = load_all_documents(
+        pdf_path=RESOURCES_PDF_PATH,
+        json_path=RESOURCES_JSON_PATH,
+        text_splitter=TEXT_SPLITTER
+    )
 
-    # results = vector_store.similarity_search(query="get me anything random",k=1)
-    # for doc in results:
-    #     print(f"* {doc.page_content} [{doc.metadata}]")
+    # Deduplicate documents using unique IDs based on page_content
+    ids = [str(uuid.uuid5(uuid.NAMESPACE_DNS, doc.page_content)) for doc in combined_chunked_documents]
+    unique_ids = list(set(ids))
+    seen_ids = set()
+    unique_docs = [
+        doc for doc, id in zip(combined_chunked_documents, ids)
+        if id not in seen_ids and (seen_ids.add(id) or True)
+    ]
 
-    # RAG Setup
+    # Load all documents into one ChromaDB collection
+    vector_store = Chroma.from_documents(
+        documents=unique_docs,
+        embedding=embed_model,
+        ids=unique_ids,
+        client=chroma_client,
+        collection_name="my_documents"
+    )
+    print("Done with embeddings creation and combined loading into ChromaDB")
+
+    # Setup retriever for RAG
     retriever = vector_store.as_retriever()
 
     return vector_store, retriever
